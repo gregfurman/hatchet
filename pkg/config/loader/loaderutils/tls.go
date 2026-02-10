@@ -57,6 +57,8 @@ func LoadServerTLSConfig(tlsConfig *shared.TLSConfigFile) (*tls.Config, error) {
 
 		res.ClientAuth = tls.RequireAndVerifyClientCert
 		res.ClientCAs = ca
+	case "none":
+		res.ClientAuth = tls.NoClientCert
 	default:
 		return nil, fmt.Errorf("invalid TLS strategy: %s", tlsConfig.TLSStrategy)
 	}
