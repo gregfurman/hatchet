@@ -6,7 +6,8 @@ on:
 
 jobs:
   generate:
-    runs-on: ubicloud-standard-2
+    runs-on: ubuntu-latest
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
@@ -31,7 +32,7 @@ jobs:
       with:
         python-version: '3.14'
     - name: Generate snippets
-      run: task pre-commit-install generate-docs -v
+      run: task install-dependencies pre-commit-install generate-docs -v
 
     - name: Check for changes in examples directory
       id: verify-changed-files
