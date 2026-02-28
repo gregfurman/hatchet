@@ -1,18 +1,16 @@
 import asyncio
 import ctypes
 import functools
-import json
-import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, is_dataclass
+from dataclasses import is_dataclass
 from enum import Enum
 from multiprocessing import Queue
 from textwrap import dedent
 from threading import Thread, current_thread
 from typing import Any, Literal, cast, overload
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from hatchet_sdk.client import Client
 from hatchet_sdk.clients.admin import AdminClient
@@ -30,7 +28,6 @@ from hatchet_sdk.contracts.dispatcher_pb2 import (
     STEP_EVENT_TYPE_STARTED,
 )
 from hatchet_sdk.exceptions import (
-    CancellationReason,
     IllegalTaskOutputError,
     NonRetryableException,
     TaskRunError,
@@ -41,7 +38,7 @@ from hatchet_sdk.runnables.action import Action, ActionKey, ActionType
 from hatchet_sdk.runnables.contextvars import (
     ctx_action_key,
     ctx_additional_metadata,
-    ctx_cancellation_token,
+    ctx_hatchet_context,
     ctx_step_run_id,
     ctx_task_retry_count,
     ctx_worker_id,
@@ -51,19 +48,18 @@ from hatchet_sdk.runnables.contextvars import (
     workflow_spawn_indices,
 )
 from hatchet_sdk.runnables.task import Task
-from hatchet_sdk.runnables.types import R, TWorkflowInput
+from hatchet_sdk.runnables.types import R, TaskPayloadForInternalUse, TWorkflowInput
 from hatchet_sdk.serde import HATCHET_PYDANTIC_SENTINEL
 from hatchet_sdk.utils.cache import BoundedDict
 from hatchet_sdk.utils.serde import remove_null_unicode_character
-from hatchet_sdk.utils.typing import DataclassInstance
 from hatchet_sdk.worker.action_listener_process import ActionEvent
 from hatchet_sdk.worker.runner.utils.capture_logs import (
     AsyncLogSender,
     ContextVarToCopy,
     ContextVarToCopyDict,
+    ContextVarToCopyHatchetContext,
     ContextVarToCopyInt,
     ContextVarToCopyStr,
-    ContextVarToCopyToken,
     copy_context_vars,
 )
 
@@ -199,7 +195,7 @@ class Runner:
                 return
 
             try:
-                output = self.serialize_output(output)
+                output = self.serialize_output(t.validators.step_output, output)
 
                 self.event_queue.put(
                     ActionEvent(
@@ -255,7 +251,6 @@ class Runner:
         ctx_action_key.set(action.key)
         ctx_additional_metadata.set(action.additional_metadata)
         ctx_task_retry_count.set(action.retry_count)
-        ctx_cancellation_token.set(ctx.cancellation_token)
 
         async with task._unpack_dependencies_with_cleanup(ctx) as dependencies:
             try:
@@ -304,9 +299,9 @@ class Runner:
                             )
                         ),
                         ContextVarToCopy(
-                            var=ContextVarToCopyToken(
-                                name="ctx_cancellation_token",
-                                value=ctx.cancellation_token,
+                            var=ContextVarToCopyHatchetContext(
+                                name="ctx_hatchet_context",
+                                value=ctx,
                             )
                         ),
                     ],
@@ -394,7 +389,7 @@ class Runner:
     ) -> Context | DurableContext:
         constructor = DurableContext if is_durable else Context
 
-        return constructor(
+        ctx = constructor(
             action=action,
             dispatcher_client=self.dispatcher_client,
             admin_client=self.admin_client,
@@ -408,6 +403,10 @@ class Runner:
             task_name=task.name,
             workflow_name=task.workflow.name,
         )
+
+        ctx_hatchet_context.set(ctx)
+
+        return ctx
 
     ## IMPORTANT: Keep this method's signature in sync with the wrapper in the OTel instrumentor
     async def handle_start_step_run(self, action: Action) -> Exception | None:
@@ -491,131 +490,52 @@ class Runner:
     ## IMPORTANT: Keep this method's signature in sync with the wrapper in the OTel instrumentor
     async def handle_cancel_action(self, action: Action) -> None:
         key = action.key
-        start_time = time.monotonic()
-
-        logger.info(
-            f"Cancellation: received cancel action for {action.action_id}, "
-            f"reason={CancellationReason.WORKFLOW_CANCELLED.value}"
-        )
-
         try:
-            # Trigger the cancellation token to signal the context to stop
+            # call cancel to signal the context to stop
             if key in self.contexts:
-                ctx = self.contexts[key]
-                child_count = len(ctx.cancellation_token.child_run_ids)
-                logger.debug(
-                    f"Cancellation: triggering token for {action.action_id}, "
-                    f"reason={CancellationReason.WORKFLOW_CANCELLED.value}, "
-                    f"{child_count} children registered"
-                )
-                ctx._set_cancellation_flag(CancellationReason.WORKFLOW_CANCELLED)
+                self.contexts[key]._set_cancellation_flag()
                 self.cancellations[key] = True
-                # Note: Child workflows are not cancelled here - they run independently
-                # and are managed by Hatchet's normal cancellation mechanisms
-            else:
-                logger.debug(f"Cancellation: no context found for {action.action_id}")
 
-            # Wait with supervision (using timedelta configs)
-            grace_period = self.config.cancellation_grace_period.total_seconds()
-            warning_threshold = (
-                self.config.cancellation_warning_threshold.total_seconds()
-            )
-            grace_period_ms = round(grace_period * 1000)
-            warning_threshold_ms = round(warning_threshold * 1000)
+            await asyncio.sleep(1)
 
-            # Wait until warning threshold
-            await asyncio.sleep(warning_threshold)
-            elapsed = time.monotonic() - start_time
-            elapsed_ms = round(elapsed * 1000)
+            if key in self.tasks:
+                self.tasks[key].cancel()
 
-            # Check if the task has not yet exited despite the cancellation signal.
-            task_still_running = key in self.tasks and not self.tasks[key].done()
+            # check if thread is still running, if so, print a warning
+            if key in self.threads:
+                thread = self.threads[key]
 
-            if task_still_running:
+                if self.config.enable_force_kill_sync_threads:
+                    self.force_kill_thread(thread)
+                    await asyncio.sleep(1)
+
                 logger.warning(
-                    f"Cancellation: task {action.action_id} has not cancelled after "
-                    f"{elapsed_ms}ms (warning threshold {warning_threshold_ms}ms). "
-                    f"Consider checking for blocking operations. "
-                    f"See https://docs.hatchet.run/home/cancellation"
+                    f"thread {self.threads[key].ident} with key {key} is still running after cancellation. This could cause the thread pool to get blocked and prevent new tasks from running."
                 )
-
-                remaining = grace_period - elapsed
-                if remaining > 0:
-                    await asyncio.sleep(remaining)
-
-                if key in self.tasks and not self.tasks[key].done():
-                    logger.debug(
-                        f"Cancellation: force-cancelling task {action.action_id} "
-                        f"after grace period ({grace_period_ms}ms)"
-                    )
-                    self.tasks[key].cancel()
-
-                if key in self.threads:
-                    thread = self.threads[key]
-
-                    if self.config.enable_force_kill_sync_threads:
-                        logger.debug(
-                            f"Cancellation: force-killing thread for {action.action_id}"
-                        )
-                        self.force_kill_thread(thread)
-                        await asyncio.sleep(1)
-
-                    if thread.is_alive():
-                        logger.warning(
-                            f"Cancellation: thread {thread.ident} with key {key} is still running "
-                            f"after cancellation. This could cause the thread pool to get blocked "
-                            f"and prevent new tasks from running."
-                        )
-
-                total_elapsed = time.monotonic() - start_time
-                total_elapsed_ms = round(total_elapsed * 1000)
-                if total_elapsed > grace_period:
-                    logger.warning(
-                        f"Cancellation: cancellation of {action.action_id} took {total_elapsed_ms}ms "
-                        f"(exceeded grace period of {grace_period_ms}ms)"
-                    )
-                else:
-                    logger.debug(
-                        f"Cancellation: task {action.action_id} eventually completed in {total_elapsed_ms}ms"
-                    )
-            else:
-                logger.info(f"Cancellation: task {action.action_id} completed")
         finally:
             self.cleanup_run_id(key)
 
-    def serialize_output(self, output: Any) -> str | None:
+    def serialize_output(
+        self, validator: TypeAdapter[TaskPayloadForInternalUse], output: Any
+    ) -> str | None:
         if not output:
             return None
 
-        if isinstance(output, BaseModel):
-            try:
-                output = output.model_dump(
-                    mode="json", context=HATCHET_PYDANTIC_SENTINEL
-                )
-            except Exception as e:
-                logger.exception("could not serialize pydantic model output")
-
-                raise IllegalTaskOutputError(
-                    f"could not serialize Pydantic BaseModel output: {e}"
-                ) from e
-        elif is_dataclass(output):
-            output = asdict(cast(DataclassInstance, output))
-
-        if not isinstance(output, dict):
+        if not isinstance(output, dict | BaseModel) and not is_dataclass(output):
             raise IllegalTaskOutputError(
                 f"Tasks must return either a dictionary, a Pydantic BaseModel, or a dataclass which can be serialized to a JSON object. Got object of type {type(output)} instead."
             )
 
-        if output is None:
-            return None
-
         try:
-            serialized_output = json.dumps(output, default=str)
+            serialized_output = validator.dump_json(
+                output,  # type: ignore[arg-type]
+                context=HATCHET_PYDANTIC_SENTINEL,
+            ).decode("utf-8")
         except Exception as e:
-            logger.exception("could not serialize output")
-            raise IllegalTaskOutputError(
-                "Task output could not be serialized to JSON. Please ensure that all task outputs are JSON serializable."
-            ) from e
+            raise IllegalTaskOutputError(f"Failed to serialize task output: {e}") from e
+
+        if not serialized_output:
+            return None
 
         if "\\u0000" in serialized_output:
             raise IllegalTaskOutputError(dedent(f"""

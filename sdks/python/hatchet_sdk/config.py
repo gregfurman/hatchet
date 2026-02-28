@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from enum import Enum
 from logging import Logger, getLogger
 from typing import overload
 
@@ -52,7 +53,7 @@ class HealthcheckConfig(BaseSettings):
         if isinstance(value, timedelta):
             return value
 
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return timedelta(seconds=float(value))
 
         v = value.strip()
@@ -87,12 +88,35 @@ class OpenTelemetryConfig(BaseSettings):
     include_task_name_in_start_step_run_span_name: bool = False
 
 
+class HTTPMethod(str, Enum):
+    GET = "GET"
+    DELETE = "DELETE"
+    POST = "POST"
+    PUT = "PUT"
+    PATCH = "PATCH"
+    HEAD = "HEAD"
+    OPTIONS = "OPTIONS"
+
+
 class TenacityConfig(BaseSettings):
     model_config = create_settings_config(
         env_prefix="HATCHET_CLIENT_TENACITY_",
     )
 
     max_attempts: int = 5
+
+    retry_429: bool = Field(
+        default=False,
+        description="Enable retries for HTTP 429 Too Many Requests responses. Default: off.",
+    )
+    retry_transport_errors: bool = Field(
+        default=False,
+        description="Enable retries for REST transport errors (timeout, connection, TLS). Default: off.",
+    )
+    retry_transport_methods: list[HTTPMethod] = Field(
+        default_factory=lambda: [HTTPMethod.GET, HTTPMethod.DELETE],
+        description="HTTP methods to retry on transport errors when retry_transport_errors is enabled; excludes POST/PUT/PATCH by default due to idempotency concerns.",
+    )
 
 
 DEFAULT_HOST_PORT = "localhost:7070"
@@ -134,37 +158,6 @@ class ClientConfig(BaseSettings):
     grpc_enable_fork_support: bool = False
     force_shutdown_on_shutdown_signal: bool = False
     tenacity: TenacityConfig = TenacityConfig()
-
-    # Cancellation configuration
-    cancellation_grace_period: timedelta = Field(
-        default=timedelta(milliseconds=1000),
-        description="The maximum time to wait for a task to complete after cancellation is triggered before force-cancelling. Value is interpreted as seconds when provided as int/float.",
-    )
-    cancellation_warning_threshold: timedelta = Field(
-        default=timedelta(milliseconds=300),
-        description="If a task has not completed cancellation within this duration, a warning will be logged. Value is interpreted as seconds when provided as int/float.",
-    )
-
-    @field_validator(
-        "cancellation_grace_period", "cancellation_warning_threshold", mode="before"
-    )
-    @classmethod
-    def validate_cancellation_timedelta(
-        cls, value: timedelta | int | float | str
-    ) -> timedelta:
-        """Convert int/float/string to timedelta, interpreting as seconds."""
-        if isinstance(value, timedelta):
-            return value
-
-        if isinstance(value, (int, float)):
-            return timedelta(seconds=float(value))
-
-        v = value.strip()
-        # Allow a small convenience suffix, but keep "seconds" as the contract.
-        if v.endswith("s"):
-            v = v[:-1].strip()
-
-        return timedelta(seconds=float(v))
 
     @model_validator(mode="after")
     def validate_token_and_tenant(self) -> "ClientConfig":

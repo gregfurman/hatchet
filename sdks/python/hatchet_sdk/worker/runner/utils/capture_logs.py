@@ -1,21 +1,18 @@
-from __future__ import annotations
-
 import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
 from io import StringIO
-from typing import Literal, ParamSpec, TypeVar
+from typing import Any, Literal, ParamSpec, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from hatchet_sdk.cancellation import CancellationToken
 from hatchet_sdk.clients.events import EventClient
 from hatchet_sdk.logger import logger
 from hatchet_sdk.runnables.contextvars import (
     ctx_action_key,
     ctx_additional_metadata,
-    ctx_cancellation_token,
+    ctx_hatchet_context,
     ctx_step_run_id,
     ctx_task_retry_count,
     ctx_worker_id,
@@ -52,13 +49,9 @@ class ContextVarToCopyDict(BaseModel):
     value: JSONSerializableMapping | None
 
 
-class ContextVarToCopyToken(BaseModel):
-    """Special type for copying CancellationToken to threads."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    name: Literal["ctx_cancellation_token"]
-    value: CancellationToken | None
+class ContextVarToCopyHatchetContext(BaseModel):
+    name: Literal["ctx_hatchet_context"]
+    value: Any
 
 
 class ContextVarToCopy(BaseModel):
@@ -66,7 +59,7 @@ class ContextVarToCopy(BaseModel):
         ContextVarToCopyStr
         | ContextVarToCopyDict
         | ContextVarToCopyInt
-        | ContextVarToCopyToken
+        | ContextVarToCopyHatchetContext
     ) = Field(discriminator="name")
 
 
@@ -89,8 +82,8 @@ def copy_context_vars(
             ctx_worker_id.set(var.var.value)
         elif var.var.name == "ctx_additional_metadata":
             ctx_additional_metadata.set(var.var.value or {})
-        elif var.var.name == "ctx_cancellation_token":
-            ctx_cancellation_token.set(var.var.value)
+        elif var.var.name == "ctx_hatchet_context":
+            ctx_hatchet_context.set(var.var.value)
         else:
             raise ValueError(f"Unknown context variable name: {var.var.name}")
 

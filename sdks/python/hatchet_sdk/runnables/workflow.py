@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import json
 from collections.abc import Callable
@@ -39,11 +37,8 @@ from hatchet_sdk.contracts.v1.workflows_pb2 import (
 )
 from hatchet_sdk.contracts.v1.workflows_pb2 import StickyStrategy as StickyStrategyProto
 from hatchet_sdk.contracts.workflows_pb2 import WorkflowVersion
-from hatchet_sdk.exceptions import CancellationReason, CancelledError
 from hatchet_sdk.labels import DesiredWorkerLabel
-from hatchet_sdk.logger import logger
 from hatchet_sdk.rate_limit import RateLimit
-from hatchet_sdk.runnables.contextvars import ctx_cancellation_token
 from hatchet_sdk.runnables.task import Task
 from hatchet_sdk.runnables.types import (
     ConcurrencyExpression,
@@ -57,7 +52,6 @@ from hatchet_sdk.runnables.types import (
     normalize_validator,
 )
 from hatchet_sdk.serde import HATCHET_PYDANTIC_SENTINEL
-from hatchet_sdk.utils.cancellation import await_with_cancellation
 from hatchet_sdk.utils.proto_enums import convert_python_enum_to_proto
 from hatchet_sdk.utils.timedelta_to_expression import Duration
 from hatchet_sdk.utils.typing import CoroutineLike, JSONSerializableMapping
@@ -65,7 +59,6 @@ from hatchet_sdk.workflow_run import WorkflowRunRef
 
 if TYPE_CHECKING:
     from hatchet_sdk import Hatchet
-    from hatchet_sdk.cancellation import CancellationToken
 
 
 T = TypeVar("T")
@@ -95,7 +88,7 @@ class ComputedTaskParameters(BaseModel):
     task_defaults: TaskDefaults
 
     @model_validator(mode="after")
-    def validate_params(self) -> ComputedTaskParameters:
+    def validate_params(self) -> "ComputedTaskParameters":
         self.execution_timeout = fall_back_to_default(
             value=self.execution_timeout,
             param_default=timedelta(seconds=60),
@@ -143,7 +136,7 @@ class TypedTriggerWorkflowRunConfig(BaseModel, Generic[TWorkflowInput]):
 
 
 class BaseWorkflow(Generic[TWorkflowInput]):
-    def __init__(self, config: WorkflowConfig, client: Hatchet) -> None:
+    def __init__(self, config: WorkflowConfig, client: "Hatchet") -> None:
         self.config = config
         self._default_tasks: list[Task[TWorkflowInput, Any]] = []
         self._durable_tasks: list[Task[TWorkflowInput, Any]] = []
@@ -313,15 +306,20 @@ class BaseWorkflow(Generic[TWorkflowInput]):
         """
         return WorkflowRunTriggerConfig(
             workflow_name=self.config.name,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=self._create_options_with_combined_additional_meta(options),
             key=key,
         )
 
-    def _serialize_input(self, input: TWorkflowInput | None) -> JSONSerializableMapping:
-        if not input:
-            return {}
+    def _serialize_input_to_str(self, input: TWorkflowInput | None) -> str | None:
+        return self.config.input_validator.dump_json(
+            input,  # type: ignore[arg-type]
+            context=HATCHET_PYDANTIC_SENTINEL,
+        ).decode("utf-8")
 
+    def _serialize_input_to_dict(
+        self, input: TWorkflowInput | None
+    ) -> JSONSerializableMapping:
         return cast(
             JSONSerializableMapping,
             self.config.input_validator.dump_python(
@@ -330,6 +328,32 @@ class BaseWorkflow(Generic[TWorkflowInput]):
                 context=HATCHET_PYDANTIC_SENTINEL,
             ),
         )
+
+    @overload
+    def _serialize_input(
+        self, input: TWorkflowInput | None, target: Literal["string"] = "string"
+    ) -> str | None: ...
+
+    @overload
+    def _serialize_input(
+        self, input: TWorkflowInput | None, target: Literal["dict"] = "dict"
+    ) -> JSONSerializableMapping: ...
+
+    def _serialize_input(
+        self,
+        input: TWorkflowInput | None,
+        target: Literal["string"] | Literal["dict"] = "string",
+    ) -> JSONSerializableMapping | str | None:
+        if not input:
+            return None
+
+        if target == "string":
+            return self._serialize_input_to_str(input)
+
+        if target == "dict":
+            return self._serialize_input_to_dict(input)
+
+        raise ValueError(f"Invalid target for input serialization: {target}")
 
     @cached_property
     def id(self) -> str:
@@ -497,7 +521,7 @@ class BaseWorkflow(Generic[TWorkflowInput]):
         return self.client._client.admin.schedule_workflow(
             name=self.config.name,
             schedules=cast(list[datetime | timestamp_pb2.Timestamp], [run_at]),
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=options,
         )
 
@@ -518,7 +542,7 @@ class BaseWorkflow(Generic[TWorkflowInput]):
         return await self.client._client.admin.aio_schedule_workflow(
             name=self.config.name,
             schedules=cast(list[datetime | timestamp_pb2.Timestamp], [run_at]),
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=options,
         )
 
@@ -545,7 +569,7 @@ class BaseWorkflow(Generic[TWorkflowInput]):
             workflow_name=self.config.name,
             cron_name=cron_name,
             expression=expression,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="dict"),
             additional_metadata=additional_metadata or {},
             priority=priority,
         )
@@ -573,7 +597,7 @@ class BaseWorkflow(Generic[TWorkflowInput]):
             workflow_name=self.config.name,
             cron_name=cron_name,
             expression=expression,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="dict"),
             additional_metadata=additional_metadata or {},
             priority=priority,
         )
@@ -632,38 +656,6 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
     and can be arranged into complex dependency patterns.
     """
 
-    def _resolve_check_cancellation_token(self) -> CancellationToken | None:
-        cancellation_token = ctx_cancellation_token.get()
-
-        if cancellation_token and cancellation_token.is_cancelled:
-            raise CancelledError(
-                "Operation cancelled by cancellation token",
-                reason=CancellationReason.TOKEN_CANCELLED,
-            )
-
-        return cancellation_token
-
-    def _register_child_with_token(
-        self,
-        cancellation_token: CancellationToken | None,
-        workflow_run_id: str,
-    ) -> None:
-        if not cancellation_token:
-            return
-
-        cancellation_token.register_child(workflow_run_id)
-
-    def _register_children_with_token(
-        self,
-        cancellation_token: CancellationToken | None,
-        refs: list[WorkflowRunRef],
-    ) -> None:
-        if not cancellation_token:
-            return
-
-        for ref in refs:
-            cancellation_token.register_child(ref.workflow_run_id)
-
     def run_no_wait(
         self,
         input: TWorkflowInput = cast(TWorkflowInput, EmptyModel()),
@@ -673,33 +665,16 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Synchronously trigger a workflow run without waiting for it to complete.
         This method is useful for starting a workflow run and immediately returning a reference to the run without blocking while the workflow runs.
 
-        If a cancellation token is available via context, the child workflow will be registered
-        with the token.
-
         :param input: The input data for the workflow.
         :param options: Additional options for workflow execution.
 
         :returns: A `WorkflowRunRef` object representing the reference to the workflow run.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.run_no_wait: triggering {self.config.name}, "
-            f"token={cancellation_token is not None}"
-        )
-
-        ref = self.client._client.admin.run_workflow(
+        return self.client._client.admin.run_workflow(
             workflow_name=self.config.name,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=self._create_options_with_combined_additional_meta(options),
         )
-
-        self._register_child_with_token(
-            cancellation_token,
-            ref.workflow_run_id,
-        )
-
-        return ref
 
     def run(
         self,
@@ -710,34 +685,20 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Run the workflow synchronously and wait for it to complete.
 
         This method triggers a workflow run, blocks until completion, and returns the final result.
-        If a cancellation token is available via context, the wait can be interrupted.
 
         :param input: The input data for the workflow, must match the workflow's input type.
         :param options: Additional options for workflow execution like metadata and parent workflow ID.
 
         :returns: The result of the workflow execution as a dictionary.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.run: triggering {self.config.name}, "
-            f"token={cancellation_token is not None}"
-        )
 
         ref = self.client._client.admin.run_workflow(
             workflow_name=self.config.name,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=self._create_options_with_combined_additional_meta(options),
         )
 
-        self._register_child_with_token(
-            cancellation_token,
-            ref.workflow_run_id,
-        )
-
-        logger.debug(f"Workflow.run: awaiting result for {ref.workflow_run_id}")
-
-        return ref.result(cancellation_token=cancellation_token)
+        return ref.result()
 
     async def aio_run_no_wait(
         self,
@@ -748,33 +709,17 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Asynchronously trigger a workflow run without waiting for it to complete.
         This method is useful for starting a workflow run and immediately returning a reference to the run without blocking while the workflow runs.
 
-        If a cancellation token is available via context, the child workflow will be registered
-        with the token.
-
         :param input: The input data for the workflow.
         :param options: Additional options for workflow execution.
 
         :returns: A `WorkflowRunRef` object representing the reference to the workflow run.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
 
-        logger.debug(
-            f"Workflow.aio_run_no_wait: triggering {self.config.name}, "
-            f"token={cancellation_token is not None}"
-        )
-
-        ref = await self.client._client.admin.aio_run_workflow(
+        return await self.client._client.admin.aio_run_workflow(
             workflow_name=self.config.name,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=self._create_options_with_combined_additional_meta(options),
         )
-
-        self._register_child_with_token(
-            cancellation_token,
-            ref.workflow_run_id,
-        )
-
-        return ref
 
     async def aio_run(
         self,
@@ -785,47 +730,25 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Run the workflow asynchronously and wait for it to complete.
 
         This method triggers a workflow run, awaits until completion, and returns the final result.
-        If a cancellation token is available via context, the wait can be interrupted.
 
         :param input: The input data for the workflow, must match the workflow's input type.
         :param options: Additional options for workflow execution like metadata and parent workflow ID.
 
         :returns: The result of the workflow execution as a dictionary.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.aio_run: triggering {self.config.name}, "
-            f"token={cancellation_token is not None}"
-        )
-
         ref = await self.client._client.admin.aio_run_workflow(
             workflow_name=self.config.name,
-            input=self._serialize_input(input),
+            input=self._serialize_input(input, target="string"),
             options=self._create_options_with_combined_additional_meta(options),
         )
 
-        self._register_child_with_token(
-            cancellation_token,
-            ref.workflow_run_id,
-        )
-
-        logger.debug(f"Workflow.aio_run: awaiting result for {ref.workflow_run_id}")
-
-        return await await_with_cancellation(
-            ref.aio_result(),
-            cancellation_token,
-        )
+        return await ref.aio_result()
 
     def _get_result(
-        self,
-        ref: WorkflowRunRef,
-        return_exceptions: bool,
+        self, ref: WorkflowRunRef, return_exceptions: bool
     ) -> dict[str, Any] | BaseException:
         try:
-            return ref.result(
-                cancellation_token=self._resolve_check_cancellation_token()
-            )
+            return ref.result()
         except Exception as e:
             if return_exceptions:
                 return e
@@ -854,52 +777,15 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Run a workflow in bulk and wait for all runs to complete.
         This method triggers multiple workflow runs, blocks until all of them complete, and returns the final results.
 
-        If a cancellation token is available via context, all child workflows will be registered
-        with the token and the wait can be interrupted.
-
         :param workflows: A list of `WorkflowRunTriggerConfig` objects, each representing a workflow run to be triggered.
         :param return_exceptions: If `True`, exceptions will be returned as part of the results instead of raising them.
         :returns: A list of results for each workflow run.
-        :raises CancelledError: If the cancellation token is triggered (and return_exceptions is False).
-        :raises Exception: If a workflow run fails (and return_exceptions is False).
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
         refs = self.client._client.admin.run_workflows(
             workflows=workflows,
         )
 
-        self._register_children_with_token(
-            cancellation_token,
-            refs,
-        )
-
-        # Pass cancellation_token through to each result() call
-        # The cancellation check happens INSIDE result()'s polling loop
-        results: list[dict[str, Any] | BaseException] = []
-        for ref in refs:
-            try:
-                results.append(ref.result(cancellation_token=cancellation_token))
-            except CancelledError:  # noqa: PERF203
-                logger.debug(
-                    f"Workflow.run_many: cancellation detected, stopping wait, "
-                    f"reason={CancellationReason.PARENT_CANCELLED.value}"
-                )
-                if return_exceptions:
-                    results.append(
-                        CancelledError(
-                            "Operation cancelled by cancellation token",
-                            reason=CancellationReason.PARENT_CANCELLED,
-                        )
-                    )
-                    break
-                raise
-            except Exception as e:
-                if return_exceptions:
-                    results.append(e)
-                else:
-                    raise
-        return results
+        return [self._get_result(ref, return_exceptions) for ref in refs]
 
     @overload
     async def aio_run_many(
@@ -924,34 +810,16 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
         Run a workflow in bulk and wait for all runs to complete.
         This method triggers multiple workflow runs, blocks until all of them complete, and returns the final results.
 
-        If a cancellation token is available via context, all child workflows will be registered
-        with the token and the wait can be interrupted.
-
         :param workflows: A list of `WorkflowRunTriggerConfig` objects, each representing a workflow run to be triggered.
         :param return_exceptions: If `True`, exceptions will be returned as part of the results instead of raising them.
         :returns: A list of results for each workflow run.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.aio_run_many: triggering {len(workflows)} workflows, "
-            f"token={cancellation_token is not None}"
-        )
-
         refs = await self.client._client.admin.aio_run_workflows(
             workflows=workflows,
         )
 
-        self._register_children_with_token(
-            cancellation_token,
-            refs,
-        )
-
-        return await await_with_cancellation(
-            asyncio.gather(
-                *[ref.aio_result() for ref in refs], return_exceptions=return_exceptions
-            ),
-            cancellation_token,
+        return await asyncio.gather(
+            *[ref.aio_result() for ref in refs], return_exceptions=return_exceptions
         )
 
     def run_many_no_wait(
@@ -963,29 +831,12 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
 
         This method triggers multiple workflow runs and immediately returns a list of references to the runs without blocking while the workflows run.
 
-        If a cancellation token is available via context, all child workflows will be registered
-        with the token.
-
         :param workflows: A list of `WorkflowRunTriggerConfig` objects, each representing a workflow run to be triggered.
         :returns: A list of `WorkflowRunRef` objects, each representing a reference to a workflow run.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.run_many_no_wait: triggering {len(workflows)} workflows, "
-            f"token={cancellation_token is not None}"
-        )
-
-        refs = self.client._client.admin.run_workflows(
+        return self.client._client.admin.run_workflows(
             workflows=workflows,
         )
-
-        self._register_children_with_token(
-            cancellation_token,
-            refs,
-        )
-
-        return refs
 
     async def aio_run_many_no_wait(
         self,
@@ -996,30 +847,13 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
 
         This method triggers multiple workflow runs and immediately returns a list of references to the runs without blocking while the workflows run.
 
-        If a cancellation token is available via context, all child workflows will be registered
-        with the token.
-
         :param workflows: A list of `WorkflowRunTriggerConfig` objects, each representing a workflow run to be triggered.
 
         :returns: A list of `WorkflowRunRef` objects, each representing a reference to a workflow run.
         """
-        cancellation_token = self._resolve_check_cancellation_token()
-
-        logger.debug(
-            f"Workflow.aio_run_many_no_wait: triggering {len(workflows)} workflows, "
-            f"token={cancellation_token is not None}"
-        )
-
-        refs = await self.client._client.admin.aio_run_workflows(
+        return await self.client._client.admin.aio_run_workflows(
             workflows=workflows,
         )
-
-        self._register_children_with_token(
-            cancellation_token,
-            refs,
-        )
-
-        return refs
 
     def _parse_task_name(
         self,
@@ -1365,7 +1199,7 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
 
         return inner
 
-    def add_task(self, task: Standalone[TWorkflowInput, Any]) -> None:
+    def add_task(self, task: "Standalone[TWorkflowInput, Any]") -> None:
         """
         Add a task to a workflow. Intended to be used with a previously existing task (a Standalone),
         such as one created with `@hatchet.task()`, which has been converted to a `Task` object using `to_task`.
@@ -1404,7 +1238,7 @@ class Workflow(BaseWorkflow[TWorkflowInput]):
 class TaskRunRef(Generic[TWorkflowInput, R]):
     def __init__(
         self,
-        standalone: Standalone[TWorkflowInput, R],
+        standalone: "Standalone[TWorkflowInput, R]",
         workflow_run_ref: WorkflowRunRef,
     ):
         self._s = standalone
@@ -1563,9 +1397,7 @@ class Standalone(BaseWorkflow[TWorkflowInput], Generic[TWorkflowInput, R]):
     ) -> list[R]: ...
 
     def run_many(
-        self,
-        workflows: list[WorkflowRunTriggerConfig],
-        return_exceptions: bool = False,
+        self, workflows: list[WorkflowRunTriggerConfig], return_exceptions: bool = False
     ) -> list[R] | list[R | BaseException]:
         """
         Run a workflow in bulk and wait for all runs to complete.
@@ -1599,9 +1431,7 @@ class Standalone(BaseWorkflow[TWorkflowInput], Generic[TWorkflowInput, R]):
     ) -> list[R]: ...
 
     async def aio_run_many(
-        self,
-        workflows: list[WorkflowRunTriggerConfig],
-        return_exceptions: bool = False,
+        self, workflows: list[WorkflowRunTriggerConfig], return_exceptions: bool = False
     ) -> list[R] | list[R | BaseException]:
         """
         Run a workflow in bulk and wait for all runs to complete.
@@ -1621,8 +1451,7 @@ class Standalone(BaseWorkflow[TWorkflowInput], Generic[TWorkflowInput, R]):
         ]
 
     def run_many_no_wait(
-        self,
-        workflows: list[WorkflowRunTriggerConfig],
+        self, workflows: list[WorkflowRunTriggerConfig]
     ) -> list[TaskRunRef[TWorkflowInput, R]]:
         """
         Run a workflow in bulk without waiting for all runs to complete.
@@ -1637,8 +1466,7 @@ class Standalone(BaseWorkflow[TWorkflowInput], Generic[TWorkflowInput, R]):
         return [TaskRunRef[TWorkflowInput, R](self, ref) for ref in refs]
 
     async def aio_run_many_no_wait(
-        self,
-        workflows: list[WorkflowRunTriggerConfig],
+        self, workflows: list[WorkflowRunTriggerConfig]
     ) -> list[TaskRunRef[TWorkflowInput, R]]:
         """
         Run a workflow in bulk without waiting for all runs to complete.

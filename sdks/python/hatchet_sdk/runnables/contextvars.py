@@ -10,7 +10,7 @@ from hatchet_sdk.runnables.action import ActionKey
 from hatchet_sdk.utils.typing import JSONSerializableMapping
 
 if TYPE_CHECKING:
-    from hatchet_sdk.cancellation import CancellationToken
+    from hatchet_sdk.context.context import Context
 
 ctx_workflow_run_id: ContextVar[str | None] = ContextVar(
     "ctx_workflow_run_id", default=None
@@ -26,9 +26,7 @@ ctx_additional_metadata: ContextVar[JSONSerializableMapping | None] = ContextVar
 ctx_task_retry_count: ContextVar[int | None] = ContextVar(
     "ctx_task_retry_count", default=0
 )
-ctx_cancellation_token: ContextVar[CancellationToken | None] = ContextVar(
-    "ctx_cancellation_token", default=None
-)
+
 
 workflow_spawn_indices = Counter[ActionKey]()
 spawn_index_lock = asyncio.Lock()
@@ -50,3 +48,7 @@ class TaskCounter:
 
 
 task_count = TaskCounter()
+
+ctx_hatchet_context: ContextVar[Context | None] = ContextVar(
+    "ctx_hatchet_context", default=None
+)
