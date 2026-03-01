@@ -614,7 +614,7 @@ func (w *Workflow) RunNoWait(ctx context.Context, input any, opts ...RunOptFunc)
 			AdditionalMetadata: runOpts.AdditionalMetadata,
 		})
 	} else {
-		v0Workflow, err = w.v0Client.Admin().RunWorkflow(w.declaration.Name(), input, v0Opts...)
+		v0Workflow, err = w.v0Client.Admin().RunWorkflow(ctx, w.declaration.Name(), input, v0Opts...)
 	}
 
 	if err != nil {
