@@ -1,4 +1,7 @@
+from dataclasses import asdict, is_dataclass
 from typing import Any, TypeVar, cast, overload
+
+from pydantic import BaseModel
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -43,7 +46,7 @@ def remove_null_unicode_character(
 
     if isinstance(data, dict):
         return {
-            key: remove_null_unicode_character(cast(Any, value), replacement)
+            remove_null_unicode_character(cast(Any, key), replacement): remove_null_unicode_character(cast(Any, value), replacement)
             for key, value in data.items()
         }
 
@@ -58,3 +61,27 @@ def remove_null_unicode_character(
         )
 
     return data
+
+
+def contains_null_unicode_character(data: Any) -> bool:
+    """
+    Checks if data contains the null unicode character `\\u0000`.
+
+    :param data: The task output (a JSON-serializable dictionary or mapping).
+    :return: Whether the data contains the null unicode character.
+    """
+    if data is None:
+        return False
+
+    if isinstance(data, BaseModel):
+        dumped = data.model_dump()
+        return remove_null_unicode_character(dumped) != dumped
+
+    if is_dataclass(data):
+        dumped = asdict(data)  # type: ignore[arg-type]
+        return remove_null_unicode_character(dumped) != dumped
+
+    if isinstance(data, str | dict | list | tuple):
+        return remove_null_unicode_character(data) != data
+
+    return False

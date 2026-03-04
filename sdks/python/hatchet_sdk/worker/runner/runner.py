@@ -51,7 +51,10 @@ from hatchet_sdk.runnables.task import Task
 from hatchet_sdk.runnables.types import R, TaskPayloadForInternalUse, TWorkflowInput
 from hatchet_sdk.serde import HATCHET_PYDANTIC_SENTINEL
 from hatchet_sdk.utils.cache import BoundedDict
-from hatchet_sdk.utils.serde import remove_null_unicode_character
+from hatchet_sdk.utils.serde import (
+    contains_null_unicode_character,
+    remove_null_unicode_character,
+)
 from hatchet_sdk.worker.action_listener_process import ActionEvent
 from hatchet_sdk.worker.runner.utils.capture_logs import (
     AsyncLogSender,
@@ -526,6 +529,16 @@ class Runner:
                 f"Tasks must return either a dictionary, a Pydantic BaseModel, or a dataclass which can be serialized to a JSON object. Got object of type {type(output)} instead."
             )
 
+        if contains_null_unicode_character(output):
+            raise IllegalTaskOutputError(dedent(f"""
+                Task outputs cannot contain the unicode null character \\u0000
+
+                Please see this Discord thread: https://discord.com/channels/1088927970518909068/1384324576166678710/1386714014565928992
+                Relevant Postgres documentation: https://www.postgresql.org/docs/current/datatype-json.html
+
+                Use `hatchet_sdk.{remove_null_unicode_character.__name__}` to sanitize your output if you'd like to remove the character.
+                """))
+
         try:
             serialized_output = validator.dump_json(
                 output,  # type: ignore[arg-type]
@@ -536,16 +549,6 @@ class Runner:
 
         if not serialized_output:
             return None
-
-        if "\\u0000" in serialized_output:
-            raise IllegalTaskOutputError(dedent(f"""
-                Task outputs cannot contain the unicode null character \\u0000
-
-                Please see this Discord thread: https://discord.com/channels/1088927970518909068/1384324576166678710/1386714014565928992
-                Relevant Postgres documentation: https://www.postgresql.org/docs/current/datatype-json.html
-
-                Use `hatchet_sdk.{remove_null_unicode_character.__name__}` to sanitize your output if you'd like to remove the character.
-                """))
 
         return serialized_output
 
