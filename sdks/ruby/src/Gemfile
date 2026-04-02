@@ -15,4 +15,4 @@ gem "rubocop", "~> 1.21"
 # REST API client dependencies
 gem "faraday", "~> 2.0"
 gem "faraday-multipart"
-gem "json", "~> 2.0"
+gem "json", "~> 2.19"
