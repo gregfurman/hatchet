@@ -6,6 +6,7 @@ import { Api as ControlPlaneApi } from './generated/control-plane/Api';
 import queryClient from '@/query-client';
 import { InternalAxiosRequestConfig } from 'axios';
 import qs from 'qs';
+import { config } from '@/config';
 
 // Extend Axios config with custom fields injected by the API code generator.
 // https://www.typescriptlang.org/docs/handbook/declaration-merging.html
@@ -29,16 +30,19 @@ declare module 'axios' {
 
 const api = new Api({
   paramsSerializer: (params) => qs.stringify(params, { arrayFormat: 'repeat' }),
+  baseURL: config.BASE_PATH,
 });
 
 export default api;
 
 export const cloudApi = new CloudApi({
   paramsSerializer: (params) => qs.stringify(params, { arrayFormat: 'repeat' }),
+  baseURL: config.BASE_PATH,
 });
 
 export const controlPlaneApi = new ControlPlaneApi({
   paramsSerializer: (params) => qs.stringify(params, { arrayFormat: 'repeat' }),
+  baseURL: config.BASE_PATH,
 });
 
 api.instance.interceptors.request.use(exchangeTokenInterceptor);
