@@ -28,7 +28,12 @@ WORKDIR /app
 
 COPY --from=build /app/dist ./dist
 COPY --from=staticfileserver /app/hatchet-staticfileserver ./hatchet-staticfileserver
+COPY ./build/package/frontend-entrypoint.sh ./entrypoint.sh
+
+# Make entrypoint script executable
+RUN chmod +x ./entrypoint.sh
 
 EXPOSE 80
 
-CMD ["/app/hatchet-staticfileserver", "-static-asset-dir", "/app/dist"]
+# Run the entrypoint script
+CMD ["./entrypoint.sh"]
