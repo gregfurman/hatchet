@@ -4183,6 +4183,12 @@ packages:
     peerDependencies:
       seroval: 1.4.1
 
+  seroval-plugins@1.5.3:
+    resolution: {integrity: sha512-LhVh4KjjkKmCxOUjoaUwtqbDjyMfnA535yEmmGDuwZcIYtw8ns6tZmeszNTECeUg/3sJpnEjsz/KhQrcPXPw1Q==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      seroval: 1.4.1
+
   seroval@1.4.1:
     resolution: {integrity: sha512-9GOc+8T6LN4aByLN75uRvMbrwY5RDBW6lSlknsY4LEa9ZmWcxKcRe1G/Q3HZXjltxMHTrStnvrwAICxZrhldtg==}
     engines: {node: '>=10'}
@@ -4531,6 +4537,7 @@ packages:
 
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   verror@1.10.0:
@@ -6240,7 +6247,7 @@ snapshots:
       '@tanstack/history': 1.161.6
       cookie-es: 2.0.1
       seroval: 1.4.1
-      seroval-plugins: 1.5.2(seroval@1.4.1)
+      seroval-plugins: 1.5.3(seroval@1.4.1)
 
   '@tanstack/router-devtools-core@1.141.0(@tanstack/router-core@1.168.9)(csstype@3.2.3)(solid-js@1.9.10)':
     dependencies:
@@ -8749,6 +8756,10 @@ snapshots:
       seroval: 1.4.1
 
   seroval-plugins@1.5.2(seroval@1.4.1):
+    dependencies:
+      seroval: 1.4.1
+
+  seroval-plugins@1.5.3(seroval@1.4.1):
     dependencies:
       seroval: 1.4.1
 
