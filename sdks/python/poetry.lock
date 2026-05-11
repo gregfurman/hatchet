@@ -3688,15 +3688,15 @@ types-html5lib = "*"
 
 [[package]]
 name = "types-grpcio"
-version = "1.0.0.20251009"
+version = "1.0.0.20260508"
 description = "Typing stubs for grpcio"
 optional = true
-python-versions = ">=3.9"
+python-versions = ">=3.10"
 groups = ["main"]
 markers = "extra == \"lint\""
 files = [
-    {file = "types_grpcio-1.0.0.20251009-py3-none-any.whl", hash = "sha256:112ac4312a5b0a273a4c414f7f2c7668f342990d9c6ab0f647391c36331f95ed"},
-    {file = "types_grpcio-1.0.0.20251009.tar.gz", hash = "sha256:a8f615ea7a47b31f10da028ab5258d4f1611fbd70719ca450fc0ab3fb9c62b63"},
+    {file = "types_grpcio-1.0.0.20260508-py3-none-any.whl", hash = "sha256:dae7df0e16f29bde2d99ab69ef89ca0b7dd69e720e9c51976d9f70bf8805a076"},
+    {file = "types_grpcio-1.0.0.20260508.tar.gz", hash = "sha256:3551dfa991dab68e1d6cd8e73b93eb34ab32c1832bdb4054d28f75ecda8702d4"},
 ]
 
 [[package]]
@@ -4160,4 +4160,4 @@ test = ["psycopg", "pytest", "pytest-asyncio", "pytest-env", "pytest-retry", "py
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4"
-content-hash = "341a08e3094fa4d03f2650675a6797bab5808238d3e35993a82ba3233ce77b7c"
+content-hash = "a38c8ee7f50d87b2209565296cb3402bb952ffa430531eb5fc250e746a060c02"
