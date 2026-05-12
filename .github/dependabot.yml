@@ -57,6 +57,10 @@ updates:
     directory: /sdks/python
     multi-ecosystem-group: hatchet-sdk-python
     patterns: ["*"]
+    groups:
+      go-modules:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
 
   - package-ecosystem: "pip"
     directories:
