@@ -5,6 +5,9 @@ multi-ecosystem-groups:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      semver-minor-days: 7
+      semver-patch-days: 3
     update-types: ["patch", "minor"]
     open-pull-requests-limit: 1
 
