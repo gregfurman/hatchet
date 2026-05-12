@@ -8,6 +8,17 @@ multi-ecosystem-groups:
     update-types: ["patch", "minor"]
     open-pull-requests-limit: 1
 
+  hatchet-sdk-python:
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    update-types: ["patch", "minor"]
+    open-pull-requests-limit: 1
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -38,27 +49,34 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/sdks/python"
-    schedule:
-      interval: "weekly"
-      day: "monday"
     cooldown:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
-    open-pull-requests-limit: 3
-    groups:
-      python-deps:
-        dependency-type: "production"
-        patterns: ["*"]
-        update-types: ["patch", "minor"]
-      python-dev-deps:
-        patterns: ["*"]
-        update-types: ["patch", "minor"]
+    multi-ecosystem-group: hatchet-sdk-python
+    patterns: ["*"]
+
+
+  - package-ecosystem: "uv"
+    directory: "/sdks/python"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    multi-ecosystem-group: hatchet-sdk-python
+    patterns: ["*"]
 
   - package-ecosystem: "pip"
     directories:
       - "/sdks/python/examples/quickstart"
       - "/cmd/hatchet-cli/cli/templates/python/poetry"
+      - "/cmd/hatchet-cli/cli/templates/python/pip"
+    multi-ecosystem-group: "hatchet-sdk-examples"
+    patterns: ["*"]
+
+  - package-ecosystem: "uv"
+    directories:
+      - "/cmd/hatchet-cli/cli/templates/python/uv"
     multi-ecosystem-group: "hatchet-sdk-examples"
     patterns: ["*"]
 
