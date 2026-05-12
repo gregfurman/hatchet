@@ -48,13 +48,13 @@ updates:
         update-types: ["patch", "minor"]
 
   - package-ecosystem: "pip"
-    directory: "/sdks/python"
+    directory: /sdks/python
     multi-ecosystem-group: hatchet-sdk-python
     patterns: ["*"]
 
 
   - package-ecosystem: "uv"
-    directory: "/sdks/python"
+    directory: /sdks/python
     multi-ecosystem-group: hatchet-sdk-python
     patterns: ["*"]
 
