@@ -5,19 +5,12 @@ multi-ecosystem-groups:
     schedule:
       interval: "weekly"
       day: "monday"
-    update-types: ["patch", "minor"]
-    open-pull-requests-limit: 1
-
-  hatchet-sdk-python:
-    schedule:
-      interval: "weekly"
-      day: "monday"
     cooldown:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 3
     update-types: ["patch", "minor"]
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 0
 
 updates:
   - package-ecosystem: "github-actions"
@@ -49,8 +42,13 @@ updates:
 
   - package-ecosystem: "pip"
     directory: /sdks/python
-    multi-ecosystem-group: hatchet-sdk-python
-    patterns: ["*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      minor:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
 
 
   - package-ecosystem: uv
@@ -59,7 +57,7 @@ updates:
       interval: "weekly"
       day: "monday"
     groups:
-      uv:
+      minor:
         patterns: ["*"]
         update-types: ["patch", "minor"]
 
