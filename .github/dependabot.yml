@@ -55,10 +55,11 @@ updates:
 
   - package-ecosystem: uv
     directory: /sdks/python
-    multi-ecosystem-group: hatchet-sdk-python
-    patterns: ["*"]
+    schedule:
+      interval: "weekly"
+      day: "monday"
     groups:
-      go-modules:
+      uv:
         patterns: ["*"]
         update-types: ["patch", "minor"]
 
