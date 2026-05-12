@@ -49,20 +49,12 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/sdks/python"
-    cooldown:
-      semver-major-days: 30
-      semver-minor-days: 7
-      semver-patch-days: 3
     multi-ecosystem-group: hatchet-sdk-python
     patterns: ["*"]
 
 
   - package-ecosystem: "uv"
     directory: "/sdks/python"
-    cooldown:
-      semver-major-days: 30
-      semver-minor-days: 7
-      semver-patch-days: 3
     multi-ecosystem-group: hatchet-sdk-python
     patterns: ["*"]
 
