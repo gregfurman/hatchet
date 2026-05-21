@@ -80,7 +80,7 @@ jobs:
       - name: Generate release notes
         run: |
           mkdir -p .changelog
-          "${GITHUB_WORKSPACE}/hack/scripts/merge-changelogs.sh" CHANGELOG.md \
+          "${GITHUB_WORKSPACE}/hack/ci/merge-changelogs.sh" CHANGELOG.md \
               cmd/hatchet-cli/CHANGELOG.md \
               sdks/go/CHANGELOG.md > .changelog/RELEASE_NOTES.md
 
