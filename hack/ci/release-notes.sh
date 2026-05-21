@@ -10,6 +10,7 @@ get_pr_history() {
     | grep -oE '#[0-9]+' | tr -d '#' | sort -u \
     | while read -r pr; do
         gh pr view "$pr" \
+          --repo hatchet-dev/hatchet \
           --json number,title,author,labels \
           --jq '"- \(.title) (#\(.number)) by @\(.author.login)"'
       done
@@ -88,7 +89,8 @@ generate_release_notes() {
   until_hash=$(echo "$hashes" | sed -n '1p')
   since_hash=$(echo "$hashes" | sed -n '2p')
 
-  echo -e "## What's Changed?\n"
+  echo "## What's Changed?"
+  echo
 
   get_pr_history "$sdk_dir" "$since_hash" "$until_hash"
 }
