@@ -109,7 +109,7 @@ release:
     ```bash
     hatchet --version
     ```
-  name_template: "{{.ProjectName}}-cli-{{.Version}}"
+  name_template: "{{.ProjectName}} {{.Version}}"
   disable: false
 
 # Homebrew tap

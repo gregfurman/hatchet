@@ -418,3 +418,19 @@ jobs:
           gem build hatchet-sdk.gemspec
           NEW_VERSION=$(ruby -e "require_relative 'lib/hatchet/version'; puts Hatchet::VERSION")
           gem push hatchet-sdk-${NEW_VERSION}.gem
+          echo "VERSION_TAG=$NEW_VERSION" >> $GITHUB_ENV
+
+      - name: "Generate release notes"
+        if: env.VERSION_TAG != ''
+        run: ${GITHUB_WORKSPACE}/hack/scripts/release-notes.sh > ./release_notes.md
+
+      - name: "Release"
+        if: env.VERSION_TAG != ''
+        run: |
+          gh release create "rb/${VERSION_TAG}" \
+            --target "$GITHUB_SHA" \
+            --title "Ruby SDK ${VERSION_TAG}" \
+            --notes-file ./release_notes.md \
+            --latest=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
