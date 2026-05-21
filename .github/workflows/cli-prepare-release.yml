@@ -101,7 +101,7 @@ jobs:
         run: |
           gh pr create \
             --title "chore: Release ${{ steps.tags.outputs.latest }}" \
-            --body "Automated release PR. The release notes file is regenerated on every new tag push and describes only the changes belonging to the most recent tag. Currently: **${{ steps.tags.outputs.latest }}**." \
+            --body "Automated release PR. The release notes file is regenerated on every new tag push and describes only the changes belonging to the most recent tag." \
             --head "${{ steps.branch.outputs.name }}" \
             --base main \
             --label "release" \
