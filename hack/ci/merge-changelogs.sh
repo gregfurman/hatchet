@@ -1,5 +1,20 @@
 #!/bin/sh
+
+get_pr_history() {
+  local since_hash="$1" until_hash="$2"
+  shift 2
+  git log "${since_hash}..${until_hash}" --pretty=format:'%s' -- "$@" \
+    | grep -oE '#[0-9]+' | tr -d '#' | sort -u \
+    | while read -r pr; do
+        gh pr view "$pr" \
+          --repo hatchet-dev/hatchet \
+          --json number,title,author,labels \
+          --jq '"- \(.title) (#\(.number)) by @\(.author.login)"'
+      done
+}
+
 awk '
+  FNR == 1 && NR > 1 { print "" }
   /^# Changelog/ {
       release=0;
       next;
@@ -28,3 +43,10 @@ awk '
       if (release == 1) print;
       if (release > 1) nextfile;
   }' "$@"
+
+echo "What's Changed?"
+echo
+
+since=$(gh release list --repo hatchet-dev/hatchet --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+
+get_pr_history "$since" HEAD cmd pkg internal api api-contracts

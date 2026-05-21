@@ -1,12 +1,12 @@
 #!/bin/sh
-echo "## Overview"
 
 # HACK(gregfurman): While we don't have proper conventional commits & sufficient version tagging
 # history, let's bootstrap the commit history between 2 releases of each SDK.
 
 get_pr_history() {
-  local dir="$1" since_hash="$2" until_hash="$3"
-  git log "${since_hash}..${until_hash}" --pretty=format:'%s' -- "$dir" \
+  local since_hash="$1" until_hash="$2"
+  shift 2
+  git log "${since_hash}..${until_hash}" --pretty=format:'%s' -- "$@" \
     | grep -oE '#[0-9]+' | tr -d '#' | sort -u \
     | while read -r pr; do
         gh pr view "$pr" \
@@ -95,5 +95,7 @@ generate_release_notes() {
   get_pr_history "$sdk_dir" "$since_hash" "$until_hash"
 }
 
+
+echo "## Overview"
 
 generate_release_notes "$1"
