@@ -82,8 +82,9 @@ jobs:
           VERSION="${{ github.ref_name }}"
           DATE="$(date -u +%Y-%m-%d)"
           awk -v ver="$VERSION" -v date="$DATE" '
-            /^## \[Unreleased\]$/ {
+            !replaced && /^## \[/ {
               print "## [" ver "] - " date
+              replaced = 1
               next
             }
             { print }
