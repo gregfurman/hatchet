@@ -42,7 +42,7 @@ on pull request, contributor, and the version tag in which the change first
 shipped, in the form <PR TITLE> by @<PR AUTHOR> in <TAG>.
 -->
 
-## [v0.87.2] - 2026-05-22
+## [v0.87.4] - 2026-05-22
 
 ### What's Changed
 
