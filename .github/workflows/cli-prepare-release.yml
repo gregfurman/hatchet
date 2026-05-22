@@ -104,6 +104,8 @@ jobs:
                   --jq "\"- [${GITHUB_REF_NAME}] \(.title) (#\(.number)) by @\(.author.login)\""
               done > pr_list.txt
 
+          # Strip any previous What's Changed block before appending fresh one
+          sed -i '/^### What'\''s Changed/,$d' CHANGELOG.md
           if [[ -s pr_list.txt ]]; then
             { echo ""; echo "### What's Changed"; echo ""; cat pr_list.txt; } >> CHANGELOG.md
           fi
