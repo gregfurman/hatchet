@@ -11,6 +11,7 @@ from hatchet_sdk.deprecated.deprecation import semver_less_than
 from hatchet_sdk.engine_version import MinEngineVersion
 from tests.worker_fixture import get_free_port, hatchet_worker
 
+# changed foobar
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def hatchet() -> AsyncGenerator[Hatchet, None]:
