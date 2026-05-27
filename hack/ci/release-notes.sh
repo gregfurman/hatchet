@@ -92,7 +92,7 @@ generate_release_notes() {
   echo "## What's Changed?"
   echo
 
-  get_pr_history "$sdk_dir" "$since_hash" "$until_hash"
+  get_pr_history "$since_hash" "$until_hash" "$sdk_dir"
 }
 
 
