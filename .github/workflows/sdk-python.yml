@@ -317,7 +317,7 @@ jobs:
             exit 0
           fi
 
-          sh publish.sh
+          # sh publish.sh
           echo "VERSION_TAG=$NEW_VERSION" >> $GITHUB_ENV
         env:
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
