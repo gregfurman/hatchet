@@ -42,4 +42,7 @@ on pull request, contributor, and the version tag in which the change first
 shipped, in the form <PR TITLE> by @<PR AUTHOR> in <TAG>.
 -->
 
-## [Unreleased]
+## [v0.87.11] - 2026-05-28
+### v0.87.11
+
+<!-- Release notes generated using configuration in .github/release-cli.yml at v0.87.11 -->
