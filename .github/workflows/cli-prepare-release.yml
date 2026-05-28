@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PREV_TAG: ${{ steps.tags.outputs.previous }}
         run: |
-          notes=$(gh api repos/hatchet-dev/hatchet/releases/generate-notes \
+          notes=$(gh api repos/gregfurman/hatchet/releases/generate-notes \
             -f tag_name="${GITHUB_REF_NAME}" \
             -f previous_tag_name="${PREV_TAG}" \
             -f configuration_file_path=".github/release-cli.yml" \
