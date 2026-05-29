@@ -6,7 +6,7 @@
 
 [remote.github]
 # NOTE: this requires a GitHub auth token passed via GITHUB_TOKEN.
-owner = "hatchet-dev"
+owner = "gregfurman"
 repo  = "hatchet"
 
 [changelog]
