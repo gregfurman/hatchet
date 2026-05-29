@@ -62,6 +62,11 @@ jobs:
           ./hack/ci/release-notes-cli.sh --unreleased > /tmp/CHANGELOG.unreleased.md
           ./hack/ci/release-notes-cli.sh --all > /tmp/CHANGELOG.released.md
 
+      - name: Configure cliff remote for this repository
+        run: |
+          sed -i 's|owner = "hatchet-dev"|owner = "${{ github.repository_owner }}"|' cliff.toml
+          sed -i 's|repo  = "hatchet"|repo  = "${{ github.event.repository.name }}"|' cliff.toml
+
       - name: Prepend release section
         if: steps.check.outputs.already != 'true'
         uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5
