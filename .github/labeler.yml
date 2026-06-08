@@ -35,7 +35,7 @@ engine:
           - "internal/**"
           - "api/**"
           - "sql/**"
-      - all-globs-to-any-files: "!cmd/hatchet-cli/.goreleaser.yaml"
+      - all-globs-to-any-file: "!cmd/hatchet-cli/.goreleaser.yaml"
 
 dashboard:
   - changed-files:
